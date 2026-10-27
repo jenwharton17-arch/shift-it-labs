@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#69b995">
+<title>Shift It — Calendar</title>
+<style>
+:root{--mint:#bfe8d0;--dark:#39775e;--deep:#193b2e;--pale:#effaf4;--ink:#20352c;--muted:#708078;--line:#dce9e2}
+*{box-sizing:border-box}body{margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f5f8f6;color:var(--ink)}
+.app{max-width:680px;margin:auto;min-height:100vh}.top{padding:20px 18px 18px;background:linear-gradient(135deg,#78c7a4,#4d9b79);color:#fff;border-radius:0 0 24px 24px}
+.brand{font-size:25px;font-weight:850}.tag{font-size:13px;opacity:.9;margin-top:4px}.page{padding:14px}
+.back{display:inline-block;color:var(--dark);text-decoration:none;font-weight:800;margin:4px 0 14px}.card{background:#fff;border:1px solid var(--line);border-radius:18px;padding:14px}
+.toolbar{display:flex;align-items:center;gap:8px}.toolbar strong{flex:1;text-align:center;font-size:20px}.btn{border:0;border-radius:12px;padding:10px 14px;font-weight:800;background:var(--pale);color:var(--dark);border:1px solid var(--mint)}
+.today{text-align:center;margin:10px 0}.legend{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 12px;font-size:11px}.legend span{display:inline-flex;gap:5px;align-items:center}.dot{width:10px;height:10px;border-radius:50%}
+.week,.grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px}.week div{text-align:center;font-size:10px;font-weight:800;color:var(--muted);padding:4px 0}
+.day{min-height:76px;border:1px solid var(--line);border-radius:8px;padding:4px;background:#fff;overflow:hidden}.day.out{opacity:.35}.day.now{outline:2px solid var(--dark);outline-offset:-2px}.num{font-size:11px;font-weight:900}
+.shift{display:block;width:100%;margin-top:3px;padding:3px 2px;border:0;border-left:5px solid var(--dark);border-radius:4px;background:#eef7f2;color:var(--ink);text-align:left;font-size:8px;font-weight:800;line-height:1.15;overflow:hidden}
+.shift.planned{border-top:1px dashed #9b7420;border-right:1px dashed #9b7420;border-bottom:1px dashed #9b7420;background:#fffaf0}
+.note{font-size:12px;color:var(--muted);margin:8px 0 12px}.empty{padding:22px;text-align:center;color:var(--muted)}
+@media(max-width:390px){.day{min-height:66px;padding:2px}.grid,.week{gap:2px}.shift{font-size:7px}}
+</style></head><body><div class="app">
+<header class="top"><div class="brand">Shift It</div><div class="tag">Calendar</div></header>
+<main class="page"><a class="back" href="locum.html">‹ Back to Shift It</a>
+<div class="card"><div class="toolbar"><button id="prev" class="btn" type="button">‹</button><strong id="title"></strong><button id="next" class="btn" type="button">›</button></div>
+<div class="today"><button id="today" class="btn" type="button">Today</button></div>
+<div id="legend" class="legend"></div><div class="note"><b>Worked</b> = solid &nbsp; • &nbsp; <b>Planned</b> = dashed</div>
+<div class="week"><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div><div>Sun</div></div><div id="grid" class="grid"></div>
+</div></main></div>
+<script>
+(function(){
+var raw=null,db={shifts:[],surgeries:[]};
+try{raw=localStorage.getItem('shift22-db');if(raw){var parsed=JSON.parse(raw);if(parsed&&typeof parsed==='object')db=parsed}}catch(e){}
+if(!Array.isArray(db.shifts))db.shifts=[];if(!Array.isArray(db.surgeries))db.surgeries=[];
+var cursor=new Date();cursor=new Date(cursor.getFullYear(),cursor.getMonth(),1);
+var colours=['#39775e','#3f6f9f','#8a5c91','#b36c38','#655fa3','#2e7f87','#a34f59','#727a38'];
+function surgery(id){return db.surgeries.find(function(x){return String(x.id)===String(id)})||{id:id,name:'Surgery'}}
+function colour(x){var k=String(x.id||'')+'|'+String(x.name||''),v=0;for(var i=0;i<k.length;i++)v=(v*31+k.charCodeAt(i))|0;return colours[Math.abs(v)%colours.length]}
+function key(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
+function render(){
+ var title=document.getElementById('title'),grid=document.getElementById('grid'),legend=document.getElementById('legend');
+ title.textContent=cursor.toLocaleDateString('en-GB',{month:'long',year:'numeric'});grid.textContent='';legend.textContent='';
+ var used={};db.shifts.forEach(function(sh){var x=surgery(sh.surgery);used[String(x.id||x.name)]=x});
+ Object.keys(used).sort(function(a,b){return String(used[a].name).localeCompare(String(used[b].name))}).forEach(function(k){var x=used[k],w=document.createElement('span'),d=document.createElement('i');d.className='dot';d.style.background=colour(x);w.appendChild(d);w.appendChild(document.createTextNode(x.name||'Surgery'));legend.appendChild(w)});
+ if(!legend.children.length){var n=document.createElement('span');n.textContent='Your surgery colours will appear when shifts are saved.';legend.appendChild(n)}
+ var y=cursor.getFullYear(),m=cursor.getMonth(),first=new Date(y,m,1),offset=(first.getDay()+6)%7,start=new Date(y,m,1-offset),now=key(new Date());
+ for(var i=0;i<42;i++){var dt=new Date(start.getFullYear(),start.getMonth(),start.getDate()+i),dk=key(dt),cell=document.createElement('div');cell.className='day'+(dt.getMonth()===m?'':' out')+(dk===now?' now':'');var num=document.createElement('div');num.className='num';num.textContent=dt.getDate();cell.appendChild(num);
+ db.shifts.filter(function(sh){return sh.date===dk}).sort(function(a,b){return String(a.start||'').localeCompare(String(b.start||''))}).forEach(function(sh){var x=surgery(sh.surgery),e=document.createElement('div');e.className='shift'+(sh.status==='Planned'?' planned':'');e.style.borderLeftColor=colour(x);e.textContent=x.name||'Surgery';cell.appendChild(e)});grid.appendChild(cell)}
+}
+document.getElementById('prev').addEventListener('click',function(){cursor=new Date(cursor.getFullYear(),cursor.getMonth()-1,1);render()});
+document.getElementById('next').addEventListener('click',function(){cursor=new Date(cursor.getFullYear(),cursor.getMonth()+1,1);render()});
+document.getElementById('today').addEventListener('click',function(){var d=new Date();cursor=new Date(d.getFullYear(),d.getMonth(),1);render()});
+render();
+})();
+</script></body></html>
