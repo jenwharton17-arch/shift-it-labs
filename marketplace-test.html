@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Shift It Labs | Private Shift Marketplace</title>
+<style>
+:root{font-family:system-ui,-apple-system,sans-serif;color:#173a2c;background:#f5faf7}*{box-sizing:border-box}body{margin:0}.wrap{max-width:760px;margin:auto;padding:18px}header{background:#39775e;color:white;padding:24px 18px;border-radius:0 0 24px 24px}header h1{margin:0;font-size:25px}header p{margin:5px 0 0;opacity:.9}.card{background:white;border:1px solid #dce9e2;border-radius:18px;padding:18px;margin:14px 0;box-shadow:0 5px 16px #1e48350c}h2{font-size:20px;margin:0 0 12px}label{display:block;font-size:13px;font-weight:700;margin:12px 0 5px}input,select{width:100%;padding:13px;border:1px solid #cddfd4;border-radius:12px;font:inherit}button,.button{border:0;border-radius:12px;background:#39775e;color:white;padding:12px 16px;font-weight:750;font:inherit;cursor:pointer;display:inline-block;text-decoration:none}button.secondary,.button.secondary{background:#eaf7ef;color:#285f46}button:disabled{opacity:.55;cursor:not-allowed}.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:15px}.muted{color:#65766b;font-size:14px}.hidden{display:none!important}.status{padding:12px;border-radius:12px;background:#eaf7ef;margin:12px 0;white-space:pre-wrap}.error{background:#fff0eb;color:#8c352b}.shift{border-top:1px solid #e0ebe4;padding:14px 0}.shift h3{margin:0 0 6px}.tag{font-size:12px;background:#eaf7ef;padding:4px 8px;border-radius:20px;display:inline-block}.row{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}a{color:#276d50}#loading{margin:14px 0}footer{padding:20px;text-align:center;color:#687c70;font-size:12px}
+</style></head><body>
+<header><div class="wrap"><h1>Shift It Labs</h1><p>Private healthcare shift marketplace</p></div></header>
+<main class="wrap">
+<div class="row"><a href="locum.html" class="button secondary">← Back to Locum</a><button id="signOut" class="secondary hidden">Sign out</button></div>
+<div id="notice" class="status hidden" role="status"></div>
+<section id="setup" class="card hidden"><h2>Test setup required</h2><p class="muted">This test page needs the project's public Supabase publishable key before sign-in can work. Never use a secret or service-role key.</p></section>
+<section id="auth" class="card"><h2>Sign in or register</h2><p class="muted">Only approved locums can browse and apply for shifts.</p>
+<label for="email">Email</label><input id="email" type="email" autocomplete="email" required>
+<label for="password">Password</label><input id="password" type="password" autocomplete="current-password" minlength="6">
+<div class="actions"><button id="login">Sign in</button><button id="register" class="secondary">Create account</button></div>
+<p class="muted">New accounts may need email confirmation before sign-in.</p></section>
+<section id="profile" class="card hidden"><h2>Your locum profile</h2><p class="muted">Register your profession. Your account must be approved before you can see available shifts.</p>
+<label for="profession">Profession</label><select id="profession"><option value="GP">GP</option><option value="nurse">Nurse</option><option value="HCA">Healthcare assistant (HCA)</option></select>
+<label for="grade">Grade / band (optional)</label><input id="grade" maxlength="80">
+<label for="area">Home area (optional)</label><input id="area" maxlength="120">
+<div class="actions"><button id="saveProfile">Save profile</button></div>
+<h2 style="margin-top:24px">Compliance documents</h2><p class="muted">PDF, JPEG or PNG, up to 10 MB. Stored privately for admin review. Do not upload patient information.</p>
+<label for="doc">Choose a document</label><input id="doc" type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png">
+<div class="actions"><button id="upload">Upload securely</button></div>
+<p id="approval" class="muted"></p></section>
+<section id="market" class="card hidden"><div class="row"><h2>Available shifts</h2><button id="refresh" class="secondary">Refresh</button></div><p class="muted">Approved locums only. Rates are shown per hour.</p><div id="shiftList"></div></section>
+</main><footer>Shift It Labs · Test marketplace · Not for patient information</footer>
+<script type="module">
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.57.0/+esm';
+const URL='https://bmnrfidgxtsurwnwxjsb.supabase.co';
+const KEY='REPLACE_WITH_SUPABASE_PUBLISHABLE_KEY';
+const $=id=>document.getElementById(id);
+const show=(id,yes)=>$(id).classList.toggle('hidden',!yes);
+const message=(text,error=false)=>{const n=$('notice');n.textContent=text;n.classList.toggle('error',error);show('notice',!!text)};
+const configured=KEY!=='REPLACE_WITH_SUPABASE_PUBLISHABLE_KEY';
+show('setup',!configured);
+const db=configured?createClient(URL,KEY,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}}):null;
+let currentUser=null,currentProfile=null;
+function err(e){message(e?.message||String(e),true)}
+async function refresh(){
+ if(!db)return;
+ const {data:{user},error}=await db.auth.getUser();if(error&&error.name!=='AuthSessionMissingError')return err(error);
+ currentUser=user;show('auth',!user);show('signOut',!!user);show('profile',!!user);
+ show('market',false);if(!user)return;
+ const {data:p,error:pe}=await db.from('locum_profiles').select('id,profession,verification_status,eligible_for_clinical_shifts').eq('user_id',user.id).maybeSingle();
+ if(pe)return err(pe);
+ currentProfile=p;
+ if(p){$('profession').value=['GP','nurse','HCA'].includes(p.profession)?p.profession:'nurse';}
+ const approved=p?.verification_status==='verified'&&p?.eligible_for_clinical_shifts===true;
+ $('approval').textContent=!p?'Please complete your profile.':approved?'Approved — you can browse and apply.':'Awaiting manual admin approval. Your shifts remain private until approved.';
+ show('market',approved);if(approved)await loadShifts();
+}
+async function loadShifts(){
+ const {data,error}=await db.from('shifts').select('id,title,shift_date,start_time,finish_time,hourly_rate,profession,setting_type').eq('status','open').order('shift_date',{ascending:true}).limit(100);
+ if(error)return err(error);
+ const list=$('shiftList');list.replaceChildren();
+ if(!data?.length){const p=document.createElement('p');p.className='muted';p.textContent='No open shifts yet.';list.append(p);return}
+ for(const s of data){const article=document.createElement('article');article.className='shift';
+ const h=document.createElement('h3');h.textContent=s.title||'Healthcare shift';
+ const info=document.createElement('p');info.className='muted';info.textContent=[s.shift_date,s.start_time?.slice(0,5)+'–'+s.finish_time?.slice(0,5),s.profession,s.setting_type].filter(Boolean).join(' · ');
+ const rate=document.createElement('strong');rate.textContent='£'+Number(s.hourly_rate).toFixed(2)+'/hour';
+ const b=document.createElement('button');b.textContent='Apply for shift';b.style.marginLeft='12px';
+ b.onclick=async()=>{b.disabled=true;const {error}=await db.from('applications').insert({shift_id:s.id,locum_id:currentProfile.id});if(error){err(error);b.disabled=false}else{b.textContent='Application submitted';message('Application sent successfully.')}};
+ article.append(h,info,rate,b);list.append(article)}
+}
+$('login').onclick=async()=>{if(!db)return;const {error}=await db.auth.signInWithPassword({email:$('email').value.trim(),password:$('password').value});if(error)return err(error);message('Signed in.');await refresh()};
+$('register').onclick=async()=>{if(!db)return;const {error}=await db.auth.signUp({email:$('email').value.trim(),password:$('password').value});if(error)return err(error);message('Registration requested. Check your email for confirmation, then sign in.');await refresh()};
+$('signOut').onclick=async()=>{if(!db)return;await db.auth.signOut();message('Signed out.');await refresh()};
+$('saveProfile').onclick=async()=>{if(!currentUser)return;const payload={user_id:currentUser.id,profession:$('profession').value,band_grade:$('grade').value||null,home_area:$('area').value||null};const {error}=currentProfile?await db.from('locum_profiles').update(payload).eq('user_id',currentUser.id):await db.from('locum_profiles').insert(payload);if(error)return err(error);message('Profile saved. Approval is still required.');await refresh()};
+$('upload').onclick=async()=>{if(!currentUser)return;const file=$('doc').files[0];if(!file)return message('Choose a document first.',true);if(file.size>10*1024*1024)return message('File must be 10 MB or less.',true);if(!['application/pdf','image/jpeg','image/png'].includes(file.type))return message('Only PDF, JPEG and PNG are accepted.',true);const clean=file.name.replace(/[^a-zA-Z0-9._-]/g,'_');const path=currentUser.id+'/'+crypto.randomUUID()+'-'+clean;const {error}=await db.storage.from('locum-compliance').upload(path,file,{upsert:false});if(error)return err(error);message('Document uploaded privately for admin review.');$('doc').value=''};
+$('refresh').onclick=loadShifts;
+if(db){db.auth.onAuthStateChange(()=>{setTimeout(refresh,0)});refresh()}
+</script></body></html>
